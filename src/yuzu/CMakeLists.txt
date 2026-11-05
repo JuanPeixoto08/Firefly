@@ -244,7 +244,7 @@ add_executable(yuzu
     game/carousel.h game/carousel.cpp
 )
 
-set_target_properties(yuzu PROPERTIES OUTPUT_NAME "lichii")
+set_target_properties(yuzu PROPERTIES OUTPUT_NAME "firefly")
 
 # Shipped next to the executable: the NX2 switches a GUI launch cannot set another way. Read at
 # startup (LoadNx2Switches in main.cpp); a user copy in %APPDATA%\eden overrides it.
@@ -372,7 +372,7 @@ target_sources(yuzu
 if (APPLE)
     target_sources(yuzu PRIVATE util/macos_sleep.cpp util/macos_sleep.h)
 
-    # Use the supplied Lichii artwork for all macOS generators.
+    # Use the supplied Firefly artwork for all macOS generators.
     set(_dist "${CMAKE_SOURCE_DIR}/dist")
     set(_icons "${_dist}/lichii.icns")
     if (CMAKE_GENERATOR MATCHES "Xcode")

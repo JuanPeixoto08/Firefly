@@ -6,84 +6,37 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 -->
 
-<p align="center">
-  <img src="dist/branding/lichii_icon_with_logo.png" alt="Lichii" width="600">
-</p>
+# Firefly
 
-# Lichii
+A very experimental Nintendo Switch 2 emulator, focused on getting The Legend of Zelda: Ocarina of Time (2026) to run well. Firefly is a fork of [Lichii](https://github.com/zortos293/Lichii), which builds on [Eglantine](https://github.com/Djihads80/Eglantine), [Eden](https://git.eden-emu.dev/eden-emu/eden) and yuzu.
 
-Lichii is an experimental, open-source Nintendo Switch and Switch 2 emulator written in C++. It builds on Eglantine, Eden, yuzu and Sudachi, preserving their contributions while developing this fork's game compatibility and renderer fixes.
+Firefly is an independent project. Please don't report problems with these builds to Lichii, Eglantine or Eden.
 
-This is an independent fork, not an official release of those upstream projects. Lichii is not affiliated with Nintendo.
+## What it adds to Lichii
 
-## Downloads and setup
+- **Vegetation:** grass, trees and bushes draw again. The GPU culling shaders read their data through pointers that the storage buffer pass now follows. These commits are by Duck912 and Jonas, from Lichii's `port/ducky-oot-build16` branch.
+- **Shaders:** the compute programs Ocarina of Time still rejected now translate: indexed `ULDC` widths, `ULEA` and `UIADD3` carries in any `UPn`, two-source `F2IP`, and uniform `I2F` byte selectors.
+- **Fewer white flashes:** from Lichii pull request 121, by Kajcsi.
+- **Debug server input:** the debug server can press buttons and move the sticks, so a test can reach a scene without anyone at the controls.
 
-Published builds belong on this fork's [releases page](https://github.com/zortos293/Eglantine/releases). The repository still uses its historical Eglantine name; the desktop application is now Lichii.
+Most of this is meant to go back to Lichii as pull requests.
 
-On Windows, extract the entire build archive and run **lichii.exe**. Only use games and system files you have legally obtained. Games, keys and firmware are not included.
+## Status
 
-### Existing saves and settings
+Tested only on Windows, with an RTX 5070 Ti, in Kokiri Forest. Expect visual bugs, crashes and slow areas elsewhere.
 
-The rebrand intentionally retains the existing Eden/Eglantine data directories and configuration keys. It does not move or delete saves, settings or shader caches. Back up your saves before testing experimental builds.
+For better speed in Ocarina of Time, set **Graphics > Advanced > GPU accuracy** to **Low** for that game. It lets the GPU work run on two threads, which took frames from about 27 ms to 22 ms in testing.
 
-## Compatibility and issue reports
+## Requirements
 
-Compatibility and performance vary by game, hardware and driver. Rendering errors, stutters and crashes remain possible. Passing automated tests does not establish that a game renders correctly, and this project makes no universal frame-rate guarantee.
+You need your own console, and dumps of your own game, keys and firmware. Firefly includes none of them and won't help you get them.
 
-When [reporting an issue](https://github.com/zortos293/Eglantine/issues), include:
+## Building
 
-- The exact build, game version, CPU, GPU and driver version.
-- Relevant settings and steps to reproduce the problem.
-- A screenshot and the log from the affected session, after checking it for personal information.
+The build steps are the same as Lichii's; see [docs/Build.md](docs/Build.md). On Windows with MSVC in a language other than English, run `chcp 65001` before building, so Ninja can read `cl`'s include notes.
 
-Do not upload game files, keys, firmware or private account information.
+## License
 
-## Building and contributing
+GPL-3.0-or-later, as the projects it comes from. Each source file keeps its own copyright notices. See [LICENSE.txt](LICENSE.txt) and [LICENSES](LICENSES).
 
-See the [build guide](docs/Build.md), [user documentation](docs/user/README.md) and [coding guidelines](docs/Coding.md). Some inherited documentation and internal build target names still use upstream names. The GUI build target remains `yuzu`; its output is `lichii.exe` on Windows and `lichii` on other desktop platforms.
-
-Keep changes focused and distinguish code-level checks from actual gameplay testing.
-
-## Artwork
-Art created by YOB (yobslab)
-The supplied Lichii logo, icon and library artwork are in [dist/branding](dist/branding). Windows, Linux and macOS icon resources are generated from that artwork by [Generate-LichiiIcons.ps1](tools/Generate-LichiiIcons.ps1).
-
-## Support Lichii
-
-Lichii is free and stays free. If you want to help, you can donate in crypto. Donations help pay for the AI tools and build machines used to develop this open-source project faster.
-
-**Solana (SOL)**
-```text
-JepEjfyWjGjhJvHSrqj52KtLjcbbbmUh1iGqerYBF4w
-```
-
-**Ethereum (ETH)**
-```text
-0x055ABa1b80Bc35C836Ce7E9F47c2b3d6C75b5534
-```
-
-**Bitcoin (BTC)**
-```text
-bc1qcvxdpf4qvdhqp8ee4s355cjmxrzsphsdwpl8w4
-```
-
-**BNB Smart Chain (BNB)**
-```text
-0x055ABa1b80Bc35C836Ce7E9F47c2b3d6C75b5534
-```
-
-**Polygon**
-```text
-0x055ABa1b80Bc35C836Ce7E9F47c2b3d6C75b5534
-```
-
-Send each coin on its matching network. Coins sent on the wrong network can't be recovered.
-
-> [!NOTE]
-> Donations are voluntary gifts and are non-refundable. A donation does not buy any product, service, perk, early access, exclusive build, priority support or say in the project. Every release stays free and public for everyone.
-
-## Credits and license
-
-Lichii inherits the work of the Eglantine, Eden, yuzu and Sudachi projects and their contributors, including Eglantine's original developer Camille LaVey. Original copyright notices and third-party licenses are retained.
-
-See [LICENSE.txt](LICENSE.txt) and the source files for applicable license terms.
+Nintendo Switch and The Legend of Zelda are trademarks of Nintendo. Firefly isn't affiliated with Nintendo or with the projects above.
