@@ -20,6 +20,35 @@
 namespace Dynarmic {
 
 using VAddr = std::uint64_t;
+
+#if defined(__cpp_lib_atomic_ref)
+template<typename T>
+using AtomicRef = std::atomic_ref<T>;
+#else
+/// std::atomic_ref for standard libraries without it (Android's NDK libc++).
+template<typename T>
+class AtomicRef {
+public:
+    explicit AtomicRef(T& value_) : value{value_} {}
+    T load(std::memory_order order = std::memory_order_seq_cst) const {
+        return __atomic_load_n(&value, static_cast<int>(order));
+    }
+    void store(T desired, std::memory_order order = std::memory_order_seq_cst) const {
+        __atomic_store_n(&value, desired, static_cast<int>(order));
+    }
+    bool compare_exchange_strong(T& expected, T desired,
+                                 std::memory_order order = std::memory_order_seq_cst) const {
+        const int failure = order == std::memory_order_acq_rel   ? __ATOMIC_ACQUIRE
+                            : order == std::memory_order_release ? __ATOMIC_RELAXED
+                                                                 : static_cast<int>(order);
+        return __atomic_compare_exchange_n(&value, &expected, desired, false, static_cast<int>(order),
+                                           failure);
+    }
+
+private:
+    T& value;
+};
+#endif
 using Vector = std::array<std::uint64_t, 2>;
 
 class ExclusiveMonitor {
@@ -39,7 +68,7 @@ public:
         const VAddr masked_address = address & RESERVATION_GRANULE_MASK;
 
 #ifdef ARCHITECTURE_arm64
-        std::atomic_ref<VAddr>{exclusive_addresses[processor_id]}.store(masked_address, std::memory_order_release);
+        AtomicRef<VAddr>{exclusive_addresses[processor_id]}.store(masked_address, std::memory_order_release);
         const T value = op();
         std::memcpy(exclusive_values[processor_id].data(), &value, sizeof(T));
 #else
