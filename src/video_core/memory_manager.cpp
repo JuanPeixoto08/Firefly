@@ -610,24 +610,33 @@ bool MemoryManager::IsMemoryDirty(GPUVAddr gpu_addr, size_t size,
 size_t MemoryManager::MaxContinuousRange(GPUVAddr gpu_addr, size_t size) const {
     // Native storage buffers ask this for up to 8 MiB on each bind, ~70,000 times a second in
     // title 1's forest (17% of the GPU thread walking pages): keep answers per thread until the
-    // page table changes.
+    // page table changes. A range only breaks at a page boundary, so the walk from the start of
+    // the address's page answers any address and size in that page. Ocarina binds too many
+    // different ranges for a cache of whole queries (~29,000 misses a second with 64 of them).
+    if (!IsWithinGPUAddressRange(gpu_addr) || size > address_space_size - gpu_addr) {
+        return 0;
+    }
     struct Entry {
         size_t owner;
-        GPUVAddr gpu_addr;
-        size_t size;
+        GPUVAddr page;
         u64 serial;
-        size_t result;
+        GPUVAddr walked_end; ///< The walk went up to here
+        GPUVAddr run_end;    ///< Where the range from the page stops, if before walked_end
     };
-    thread_local std::array<Entry, 64> cache{};
+    thread_local std::array<Entry, 1024> cache{};
     const u64 serial = map_serial.load(std::memory_order_acquire);
-    Entry& entry = cache[((gpu_addr ^ size) * 0x9E3779B97F4A7C15ULL) >> 58];
-    if (entry.owner == unique_identifier + 1 && entry.gpu_addr == gpu_addr && entry.size == size &&
-        entry.serial == serial) {
-        return entry.result;
+    const GPUVAddr page = gpu_addr & ~GPUVAddr{page_size - 1};
+    const GPUVAddr end = gpu_addr + size;
+    Entry& entry = cache[((page >> page_bits) * 0x9E3779B97F4A7C15ULL) >> 54];
+    if (entry.owner != unique_identifier + 1 || entry.page != page || entry.serial != serial ||
+        (entry.run_end == entry.walked_end && end > entry.walked_end)) {
+        const GPUVAddr walk_end =
+            (std::min)((std::max)(end, page + size_t{8} * 1024 * 1024), GPUVAddr{address_space_size});
+        const size_t run = MaxContinuousRangeUncached(page, walk_end - page);
+        entry = {unique_identifier + 1, page, serial, walk_end, page + run};
     }
-    const size_t result = MaxContinuousRangeUncached(gpu_addr, size);
-    entry = {unique_identifier + 1, gpu_addr, size, serial, result};
-    return result;
+    return entry.run_end <= gpu_addr ? 0
+                                     : (std::min)(size, static_cast<size_t>(entry.run_end - gpu_addr));
 }
 
 size_t MemoryManager::MaxContinuousRangeUncached(GPUVAddr gpu_addr, size_t size) const {
