@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a2752"/>
+      <stop offset="1" stop-color="#0a0f26"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#eaff80" stop-opacity="0.85"/>
+      <stop offset="0.4" stop-color="#c6f24a" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#c6f24a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.42" cy="0.35" r="0.75">
+      <stop offset="0" stop-color="#fdffe0"/>
+      <stop offset="0.45" stop-color="#e6ff6e"/>
+      <stop offset="1" stop-color="#a6dc30"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g fill="#e6ff6e">
+    <circle cx="112" cy="128" r="6" opacity="0.5"/>
+    <circle cx="404" cy="112" r="5" opacity="0.4"/>
+    <circle cx="420" cy="400" r="7" opacity="0.45"/>
+    <circle cx="168" cy="372" r="9" opacity="0.55"/>
+    <circle cx="128" cy="414" r="6" opacity="0.4"/>
+    <circle cx="98" cy="446" r="4" opacity="0.3"/>
+  </g>
+  <g transform="translate(256 262) scale(1.12) rotate(35) translate(-256 -256)">
+    <circle cx="256" cy="322" r="170" fill="url(#halo)"/>
+    <g fill="#e8eeff" fill-opacity="0.22" stroke="#e8eeff" stroke-opacity="0.8" stroke-width="5">
+      <ellipse cx="178" cy="250" rx="42" ry="100" transform="rotate(48 178 250)"/>
+      <ellipse cx="334" cy="250" rx="42" ry="100" transform="rotate(-48 334 250)"/>
+    </g>
+    <ellipse cx="256" cy="318" rx="54" ry="82" fill="url(#glow)"/>
+    <g fill="none" stroke="#8fbf22" stroke-width="5" stroke-linecap="round" opacity="0.6">
+      <path d="M214 330 Q256 346 298 330"/>
+      <path d="M222 362 Q256 376 290 362"/>
+    </g>
+    <g fill="none" stroke="#ffbf80" stroke-width="7" stroke-linecap="round">
+      <path d="M246 150 C238 124 224 108 206 98"/>
+      <path d="M266 150 C274 124 288 108 306 98"/>
+    </g>
+    <circle cx="256" cy="166" r="24" fill="#2b2350" stroke="#ffbf80" stroke-width="5"/>
+    <path d="M256 186 C290 186 304 204 302 226 C300 240 284 244 256 244 C228 244 212 240 210 226 C208 204 222 186 256 186 Z" fill="#ff8f45"/>
+    <ellipse cx="256" cy="214" rx="10" ry="16" fill="#2b2350"/>
+  </g>
+</svg>

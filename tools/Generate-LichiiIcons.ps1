@@ -1,4 +1,4 @@
-param([string]$Source = "$PSScriptRoot/../dist/branding/lichii_icon.png")
+param([string]$Source = "$PSScriptRoot/../dist/branding/firefly_icon.png")
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $dist = [IO.Path]::GetFullPath("$PSScriptRoot/../dist")
