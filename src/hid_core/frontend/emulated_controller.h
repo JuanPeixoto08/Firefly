@@ -7,6 +7,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -334,6 +335,11 @@ public:
     /// Returns the latest status of button input for the hid::Npad service
     NpadButtonState GetNpadButtons() const;
 
+    /// Debug server input: buttons are ORed into the real ones, and each stick given replaces the
+    /// real one until the next call, whatever the player's mapping is.
+    void SetDebugInput(NpadButton buttons, std::optional<AnalogStickState> left,
+                       std::optional<AnalogStickState> right);
+
     /// Returns the latest status of button input for the debug pad service
     DebugPadButton GetDebugPadButtons() const;
 
@@ -634,6 +640,11 @@ private:
     ControllerMotionDevices virtual_motion_devices;
 
     mutable std::mutex callback_mutex;
+
+    mutable std::mutex debug_input_mutex;
+    NpadButton debug_buttons{};
+    std::optional<AnalogStickState> debug_left;
+    std::optional<AnalogStickState> debug_right;
     ::Common::unordered_map<int, ControllerUpdateCallback> callback_list;
     int last_callback_key = 0;
 

@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
+#include <array>
+#include <optional>
+#include <unordered_map>
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -19,6 +23,9 @@
 #include "core/debugger/nx2_debug_server.h"
 #include "core/debugger/nx2_debug_tools.h"
 #include "core/frontend/framebuffer_layout.h"
+#include "hid_core/frontend/emulated_controller.h"
+#include "hid_core/hid_core.h"
+#include "hid_core/hid_types.h"
 #include "video_core/gpu.h"
 #include "video_core/nx2_debug_control.h"
 #include "video_core/renderer_base.h"
@@ -295,6 +302,60 @@ json RejectShaders(ToolState&, const json& params) {
     return result;
 }
 
+/// Presses buttons and holds sticks on the first player and handheld controllers, then lets go.
+json Input(ToolState& state, const json& params) {
+    using Core::HID::NpadButton;
+    static const std::unordered_map<std::string, NpadButton> names{
+        {"a", NpadButton::A},         {"b", NpadButton::B},       {"x", NpadButton::X},
+        {"y", NpadButton::Y},         {"l", NpadButton::L},       {"r", NpadButton::R},
+        {"zl", NpadButton::ZL},       {"zr", NpadButton::ZR},     {"plus", NpadButton::Plus},
+        {"minus", NpadButton::Minus}, {"left", NpadButton::Left}, {"up", NpadButton::Up},
+        {"right", NpadButton::Right}, {"down", NpadButton::Down},
+        {"stick_l", NpadButton::StickL}, {"stick_r", NpadButton::StickR},
+    };
+    NpadButton buttons{};
+    for (const json& name : params.value("buttons", json::array())) {
+        const auto it = names.find(name.get<std::string>());
+        if (it == names.end()) {
+            throw std::runtime_error{fmt::format("unknown button {}", name.dump())};
+        }
+        buttons |= it->second;
+    }
+    const auto stick = [&](const char* key, NpadButton left, NpadButton right, NpadButton up,
+                           NpadButton down) -> std::optional<Core::HID::AnalogStickState> {
+        if (!params.contains(key)) {
+            return std::nullopt;
+        }
+        const json& value = params.at(key);
+        const float x = std::clamp(value.at(0).get<float>(), -1.0f, 1.0f);
+        const float y = std::clamp(value.at(1).get<float>(), -1.0f, 1.0f);
+        constexpr float threshold = 0.5f;
+        if (x < -threshold) buttons |= left;
+        if (x > threshold) buttons |= right;
+        if (y > threshold) buttons |= up;
+        if (y < -threshold) buttons |= down;
+        constexpr float range = 32767.0f;
+        return Core::HID::AnalogStickState{static_cast<s32>(x * range), static_cast<s32>(y * range)};
+    };
+    const auto left = stick("stick_l", NpadButton::StickLLeft, NpadButton::StickLRight,
+                            NpadButton::StickLUp, NpadButton::StickLDown);
+    const auto right = stick("stick_r", NpadButton::StickRLeft, NpadButton::StickRRight,
+                             NpadButton::StickRUp, NpadButton::StickRDown);
+    const int hold_ms = Param<int>(params, "hold_ms", 120, 16, 30000);
+    const std::array controllers{
+        state.system.HIDCore().GetEmulatedController(Core::HID::NpadIdType::Player1),
+        state.system.HIDCore().GetEmulatedController(Core::HID::NpadIdType::Handheld),
+    };
+    for (auto* const controller : controllers) {
+        controller->SetDebugInput(buttons, left, right);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{hold_ms});
+    for (auto* const controller : controllers) {
+        controller->SetDebugInput({}, std::nullopt, std::nullopt);
+    }
+    return {{"held_ms", hold_ms}};
+}
+
 Handlers MakeHandlers(const std::shared_ptr<ToolState>& state) {
     const auto handler = [&state](json (*tool)(ToolState&, const json&)) -> Handler {
         return [state, tool](const json& params) { return tool(*state, params); };
@@ -306,6 +367,7 @@ Handlers MakeHandlers(const std::shared_ptr<ToolState>& state) {
         {"log_filter", handler(LogFilter)},
         {"capture_frame", handler(CaptureFrame)},
         {"reject_shaders", handler(RejectShaders)},
+        {"input", handler(Input)},
     };
 }
 

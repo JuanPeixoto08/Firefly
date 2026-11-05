@@ -1807,7 +1807,16 @@ CaptureButtonState EmulatedController::GetCaptureButtons() const {
 NpadButtonState EmulatedController::GetNpadButtons() const {
     if (is_configuring)
         return {};
-    return {controller.npad_button_state.raw & GetTurboButtonMask()};
+    const std::scoped_lock lock{debug_input_mutex};
+    return {(controller.npad_button_state.raw | debug_buttons) & GetTurboButtonMask()};
+}
+
+void EmulatedController::SetDebugInput(NpadButton buttons, std::optional<AnalogStickState> left,
+                                       std::optional<AnalogStickState> right) {
+    const std::scoped_lock lock{debug_input_mutex};
+    debug_buttons = buttons;
+    debug_left = left;
+    debug_right = right;
 }
 
 DebugPadButton EmulatedController::GetDebugPadButtons() const {
@@ -1819,7 +1828,11 @@ DebugPadButton EmulatedController::GetDebugPadButtons() const {
 AnalogSticks EmulatedController::GetSticks() const {
     if (is_configuring)
         return {};
-    return controller.analog_stick_state;
+    AnalogSticks sticks{controller.analog_stick_state};
+    const std::scoped_lock lock{debug_input_mutex};
+    sticks.left = debug_left.value_or(sticks.left);
+    sticks.right = debug_right.value_or(sticks.right);
+    return sticks;
 }
 
 NpadGcTriggerState EmulatedController::GetTriggers() const {

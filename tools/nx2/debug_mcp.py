@@ -99,6 +99,21 @@ TOOLS = [
         },
     },
     {
+        "name": "input",
+        "description": "Presses buttons (a, b, x, y, l, r, zl, zr, plus, minus, up, down, left, "
+                       "right, stick_l, stick_r) and holds sticks ([x, y], -1 to 1) on the game's "
+                       "first player for hold_ms, whatever the mapping is, then lets go.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "buttons": {"type": "array", "items": {"type": "string"}},
+                "stick_l": {"type": "array", "items": {"type": "number"}},
+                "stick_r": {"type": "array", "items": {"type": "number"}},
+                "hold_ms": {"type": "integer", "minimum": 16, "maximum": 30000},
+            },
+        },
+    },
+    {
         "name": "reject_shaders",
         "description": "EDEN_NX2_REJECT_HASH at runtime: rejects (or with reject=false restores) "
                        "native programs by native program key (shader dump names) or shader hash "
