@@ -53,6 +53,7 @@ struct BuiltinPatch {
     size_t module_offset;
     u32 original;
     u32 replacement;
+    bool full_resolution{}; ///< Raises the game's resolution: off in low-end mode
 };
 
 constexpr std::array BUILTIN_PATCHES{
@@ -66,6 +67,7 @@ constexpr std::array BUILTIN_PATCHES{
         .module_offset = 0x805BD0,
         .original = 0x360041E8,    // tbz w8, #0, 0x80640c
         .replacement = 0x1400020F, // b 0x80640c
+        .full_resolution = true,
     },
 };
 
@@ -491,6 +493,10 @@ std::vector<u8> PatchManager::PatchNSO(const std::vector<u8>& nso, const std::st
         }
         if (std::find(disabled.cbegin(), disabled.cend(), patch.name) != disabled.cend()) {
             LOG_INFO(Loader, "    - Skipping \"{}\": disabled in Add-Ons", patch.name);
+            continue;
+        }
+        if (patch.full_resolution && Settings::values.low_end_mode.GetValue()) {
+            LOG_INFO(Loader, "    - Skipping \"{}\": low-end mode is on", patch.name);
             continue;
         }
         if (patch.build_id != build_id) {

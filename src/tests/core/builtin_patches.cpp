@@ -162,6 +162,13 @@ TEST_CASE("Built-in Max Resolution patch is gated on build id and original word"
         Settings::values.disabled_addons[OcarinaTitleId] = {std::string{MaxResolution}};
         REQUIRE(PatchMain(context, OcarinaBuildId, TbzInstruction) == TbzInstruction);
     }
+
+    SECTION("Low-end mode skips") {
+        Settings::values.low_end_mode.SetValue(true);
+        const u32 word = PatchMain(context, OcarinaBuildId, TbzInstruction);
+        Settings::values.low_end_mode.SetValue(false);
+        REQUIRE(word == TbzInstruction);
+    }
 }
 
 TEST_CASE("Built-in Max Resolution patch defers to a user mod at the same offset",

@@ -863,8 +863,12 @@ bool KeplerCompute::EmulatesNativeTensorPrograms() const {
     // Donkey Kong Bananza's programs must run: rejected, they write nothing and the screen is
     // purple from its mode select on.
     constexpr u64 DonkeyKongBananzaProgramId = 0x040074A01BF12000ULL;
-    return Settings::GetCurrentProgramID() == DonkeyKongBananzaProgramId ||
-           rasterizer->EmulatesNativeTensorPrograms();
+    if (Settings::GetCurrentProgramID() == DonkeyKongBananzaProgramId) {
+        return true;
+    }
+    // Low-end mode draws the plain upscale instead: an emulated network costs weak GPUs most of
+    // the frame (Ocarina of Time's runs at 6-8 FPS on an Intel Arc).
+    return !Settings::values.low_end_mode.GetValue() && rasterizer->EmulatesNativeTensorPrograms();
 }
 
 // Title 4's upscaler reads the tonemapped frame through the texture handle at cbuf0+0x90 and

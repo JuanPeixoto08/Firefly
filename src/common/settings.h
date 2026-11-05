@@ -601,6 +601,11 @@ struct Values {
     SwitchableSetting<bool> use_disk_shader_cache{linkage, true, "use_disk_shader_cache",
                                                   Category::RendererAdvanced};
 
+    // Speed over image quality on weak hardware: a plain upscale in place of games' upscaling
+    // networks, and no built-in full-resolution patches, so games lower their own resolution.
+    SwitchableSetting<bool> low_end_mode{linkage, false, "low_end_mode",
+                                         Category::RendererAdvanced};
+
     SwitchableSetting<bool> use_vulkan_driver_pipeline_cache{
         linkage, true, "use_vulkan_driver_pipeline_cache", Category::RendererAdvanced,
         Specialization::Default};
