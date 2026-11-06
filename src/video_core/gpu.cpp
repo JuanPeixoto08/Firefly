@@ -304,7 +304,14 @@ struct GPU::Impl {
                     renderer->Composite(*shared_layers);
                 });
             registering->store(false, std::memory_order_release);
-            if (!ran_inline->load(std::memory_order_acquire)) {
+            static std::atomic<u64> at_fence{}, late{};
+            const bool passed = ran_inline->load(std::memory_order_acquire);
+            (passed ? late : at_fence).fetch_add(1, std::memory_order_relaxed);
+            if ((at_fence.load(std::memory_order_relaxed) + late.load(std::memory_order_relaxed)) % 600 == 0) {
+                LOG_INFO(HW_GPU, "nx2 composites: {} at the fence, {} after it had passed",
+                         at_fence.load(std::memory_order_relaxed), late.load(std::memory_order_relaxed));
+            }
+            if (!passed) {
                 pending_composite_fence = 0;
                 gpu_thread.TickGPU(is_async);
                 return;

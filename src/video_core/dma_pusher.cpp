@@ -191,11 +191,17 @@ bool DmaPusher::Step() {
                 IsGpuWrittenCommands(dma_state.dma_get, size_t{header.size} * sizeof(u32));
         }
         // Resume and GPU-written entries need live words, even after a flush cleared dirty state.
-        const bool submitted = (command_list.snapshot_suspensions & 1) == 0 &&
-                               command_list.snapshot_suspensions ==
-                                   suspensions.load(std::memory_order_acquire) &&
+        // EDEN_NX2_RESUME_SNAPSHOT=1: keep executing the submitted words after a suspension.
+        static const bool resume_snapshot = [] {
+            const char* value = std::getenv("EDEN_NX2_RESUME_SNAPSHOT");
+            return value != nullptr && value[0] == '1';
+        }();
+        const bool submitted = (resume_snapshot ||
+                                ((command_list.snapshot_suspensions & 1) == 0 &&
+                                 command_list.snapshot_suspensions ==
+                                     suspensions.load(std::memory_order_acquire))) &&
                                VideoCommon::CanUseSubmittedCommands(
-            command_resume_offset != 0,
+            !resume_snapshot && command_resume_offset != 0,
             dma_pushbuffer_subindex < command_list.submitted_offsets.size() &&
                 !std::ranges::binary_search(command_list.deferred_entries,
                                             static_cast<u32>(dma_pushbuffer_subindex)),
@@ -209,7 +215,8 @@ bool DmaPusher::Step() {
                 header.size};
             RecordParsedEntry(header, commands);
             Nx2CmdPageDiag::CountEntry(Nx2CmdPageDiag::Path::Submitted);
-            command_resume_offset += ProcessCommands(commands, 0);
+            command_resume_offset +=
+                ProcessCommands(commands.subspan(command_resume_offset), command_resume_offset);
         } else if (use_safe) {
             Tegra::Memory::GpuGuestMemory<Tegra::CommandHeader, Tegra::Memory::GuestMemoryFlags::SafeRead>headers(memory_manager, dma_state.dma_get, header.size, &command_headers);
             const std::span<const CommandHeader> commands{headers.data(), headers.size()};

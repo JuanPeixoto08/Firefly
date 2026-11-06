@@ -204,9 +204,26 @@ void BufferCache<P>::WriteMemory(DAddr device_addr, u64 size, bool keep_page_gpu
             const char* value = std::getenv("EDEN_NX2_INLINE_PAGE_WRITES");
             return value == nullptr ? -1 : (value[0] == '0' ? 0 : 1);
         }();
+        // EDEN_NX2_INLINE_EXCLUDE=<lo>:<hi> (hex device addresses): bisect which writes need
+        // the download path.
+        static const std::pair<u64, u64> excluded = [] {
+            const char* value = std::getenv("EDEN_NX2_INLINE_EXCLUDE");
+            if (value == nullptr) {
+                return std::pair<u64, u64>{0, 0};
+            }
+            char* end{};
+            const u64 lo = std::strtoull(value, &end, 16);
+            const u64 hi = *end == ':' ? std::strtoull(end + 1, nullptr, 16) : 0;
+            return std::pair<u64, u64>{lo, hi};
+        }();
         const bool inline_writes =
-            forced >= 0 ? forced == 1 : Tegra::g_nx2_ampere.load(std::memory_order_relaxed);
+            (forced >= 0 ? forced == 1 : Tegra::g_nx2_ampere.load(std::memory_order_relaxed)) &&
+            !(device_addr < excluded.second && device_addr + size > excluded.first);
         if (inline_writes && IsRegionRegistered(device_addr, size)) {
+            static const bool trace = std::getenv("EDEN_NX2_INLINE_TRACE") != nullptr;
+            if (static u64 traced{}; trace && traced++ < 20000) {
+                LOG_INFO(HW_GPU, "inline page write [{:#x}, +{:#x})", device_addr, size);
+            }
             tmp_buffer.resize_destructive(size);
             device_memory.ReadBlockUnsafe(device_addr, tmp_buffer.data(), size);
             InlineMemoryImplementation(device_addr, size, tmp_buffer);

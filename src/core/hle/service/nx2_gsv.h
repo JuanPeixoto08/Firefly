@@ -1742,6 +1742,14 @@ private:
             m_vsync->trace_present.store(m_presents, std::memory_order_relaxed);
         }
         Core::g_nx2_present_count.fetch_add(1, std::memory_order_relaxed);
+        if (static const bool raw = std::getenv("EDEN_NX2_PRESENT_RAW") != nullptr;
+            raw && (m_presents % 300) < 6) {
+            std::string words;
+            for (u32 i = 0; i < 40; ++i) {
+                words += fmt::format(" {:08x}", w[i]);
+            }
+            LOG_INFO(Service, "nx2:vi2 229 raw #{}:{}", m_presents, words);
+        }
         if (m_presents <= 4 || (m_presents % 600) == 0) {
             LOG_INFO(Service, "nx2:vi2 229 present #{} token={:#x} slot={} image={}", m_presents,
                      u64{w[2]} | (u64{w[3]} << 32), w[4], w[5]);
@@ -1767,6 +1775,38 @@ private:
             frames_ahead = 0;
         }
         const auto entered = std::chrono::steady_clock::now();
+        // EDEN_NX2_PRESENT_DELAY=1: show the previous presented image instead of this one (its
+        // GPU work is surely recorded by now). Diagnostics for frames shown before they finished.
+        static const bool present_delay = [] {
+            const char* value = std::getenv("EDEN_NX2_PRESENT_DELAY");
+            return value != nullptr && value[0] == '1';
+        }();
+        // EDEN_NX2_EARLY_COMPOSITE=1: request the composite before waiting for the fence, so it
+        // runs at the fence in command stream order (requested after the wait, the fence has
+        // nearly always passed). Did not change Ocarina of Time's HUD flicker.
+        static const bool early_composite = [] {
+            const char* value = std::getenv("EDEN_NX2_EARLY_COMPOSITE");
+            return value != nullptr && value[0] == '1';
+        }();
+        if (early_composite && !present_delay) {
+            Composite(w[5], ~w[22], w[24], w[7]);
+        }
+        // EDEN_NX2_GUEST_FENCE_WAIT_MS=<n>: first wait up to n ms for this frame's fence in short
+        // guest kernel sleeps, which let the game's other threads on this core run (a host wait
+        // holds the core, and the GPU may wait on a semaphore one of them releases).
+        static const int guest_fence_wait_ms = [] {
+            const char* value = std::getenv("EDEN_NX2_GUEST_FENCE_WAIT_MS");
+            return value == nullptr ? 0 : std::atoi(value);
+        }();
+        if (frames_ahead == -1 && guest_fence_wait_ms > 0 && ~w[22] < 192) {
+            auto& syncpoints = system.Host1x().GetSyncpointManager();
+            const auto limit = entered + std::chrono::milliseconds{guest_fence_wait_ms};
+            while (!syncpoints.IsReadyGuest(~w[22], w[24]) && system.IsPoweredOn() &&
+                   std::chrono::steady_clock::now() < limit) {
+                static_cast<void>(Kernel::GetCurrentThread(kernel).Sleep(
+                    kernel, kernel.HardwareTimer().GetTick() + 250'000));
+            }
+        }
         if (frames_ahead == 1 || (frames_ahead == -1 && !WaitForFrame(~w[22], w[24], true))) {
             LOG_DEBUG(Service, "nx2:vi2 present #{} fence ({}, {:#x}), waiting for ({}, {:#x}); now {:#x}",
                       m_presents, ~w[22], w[24], m_previous_fence_id, m_previous_fence_value,
@@ -1791,12 +1831,6 @@ private:
         m_previous_fence_id = ~w[22];
         m_previous_fence_value = w[24];
         const auto waited = std::chrono::steady_clock::now();
-        // EDEN_NX2_PRESENT_DELAY=1: show the previous presented image instead of this one (its
-        // GPU work is surely recorded by now). Diagnostics for frames shown before they finished.
-        static const bool present_delay = [] {
-            const char* value = std::getenv("EDEN_NX2_PRESENT_DELAY");
-            return value != nullptr && value[0] == '1';
-        }();
         if (present_delay) {
             const std::array<u32, 4> current{w[5], ~w[22], w[24], w[7]};
             if (m_delayed_present) {
@@ -1804,7 +1838,7 @@ private:
                 Composite(d[0], d[1], d[2], d[3]);
             }
             m_delayed_present = current;
-        } else {
+        } else if (!early_composite) {
             Composite(w[5], ~w[22], w[24], w[7]);
         }
         const auto composited = std::chrono::steady_clock::now();
@@ -2171,8 +2205,12 @@ private:
             .native_tiling = true,
         }};
         std::vector<Nvidia::NvFence> fences;
+        static const u32 fence_extra = [] {
+            const char* value = std::getenv("EDEN_NX2_COMPOSITE_FENCE_EXTRA");
+            return value ? static_cast<u32>(std::strtoul(value, nullptr, 10)) : 0U;
+        }();
         if (fence_id < 192) {
-            fences.push_back({static_cast<s32>(fence_id), fence_value});
+            fences.push_back({static_cast<s32>(fence_id), fence_value + fence_extra});
         }
         system.GPU().RequestComposite(std::move(layers), std::move(fences));
         CaptureFrame();
