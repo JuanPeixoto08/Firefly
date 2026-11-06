@@ -1989,6 +1989,11 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
         Settings::UpdateGPUAccuracy();
         LOG_INFO(Config, "Applied recommended MKW settings after per-game configuration");
     }
+    if (Settings::ApplyOcarinaOfTimeDefaults(Settings::values, title_id)) {
+        QtCommon::system->ApplySettings();
+        Settings::UpdateGPUAccuracy();
+        LOG_INFO(Config, "Ocarina of Time starts at GPU accuracy Low (no per-game accuracy set)");
+    }
     Settings::LogSettings();
 
     if (UISettings::values.select_user_on_boot && !user_flag_cmd_line) {

@@ -34,4 +34,18 @@ inline bool ApplyMarioKartWorldPreset(Values& settings, u64 program_id, bool acc
     return true;
 }
 
+inline constexpr u64 OcarinaOfTimeProgramId = 0x0400486024DEC000ULL;
+
+// Firefly is tuned for Ocarina of Time at GPU accuracy Low, where the GPU work runs on two
+// threads (High stops the split, about 25-30 FPS instead of 60). The game starts there for the
+// session unless its own settings choose an accuracy; saved settings are not changed.
+inline bool ApplyOcarinaOfTimeDefaults(Values& settings, u64 program_id) {
+    if (program_id != OcarinaOfTimeProgramId || !settings.gpu_accuracy.UsingGlobal()) {
+        return false;
+    }
+    settings.gpu_accuracy.SetGlobal(false);
+    settings.gpu_accuracy.SetValue(GpuAccuracy::Low);
+    return true;
+}
+
 } // namespace Settings

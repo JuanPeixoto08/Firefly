@@ -109,3 +109,30 @@ TEST_CASE("Declining the MKW preset preserves global and per-game preferences", 
         CHECK(settings->resolution_setup.UsingGlobal() == !per_game);
     }
 }
+
+TEST_CASE("Ocarina of Time starts at GPU accuracy Low for the session", "[game_presets]") {
+    auto settings = std::make_unique<Settings::Values>();
+    settings->gpu_accuracy.SetGlobal(true);
+    settings->gpu_accuracy.SetValue(Settings::GpuAccuracy::High);
+    REQUIRE(Settings::ApplyOcarinaOfTimeDefaults(*settings, Settings::OcarinaOfTimeProgramId));
+    CHECK(settings->gpu_accuracy.GetValue() == Settings::GpuAccuracy::Low);
+    CHECK(settings->gpu_accuracy.GetValue(true) == Settings::GpuAccuracy::High);
+    for (const auto& restore : settings->linkage.restore_functions) {
+        restore();
+    }
+    CHECK(settings->gpu_accuracy.UsingGlobal());
+    CHECK(settings->gpu_accuracy.GetValue() == Settings::GpuAccuracy::High);
+}
+
+TEST_CASE("Ocarina of Time keeps an accuracy its own settings choose", "[game_presets]") {
+    auto settings = std::make_unique<Settings::Values>();
+    settings->gpu_accuracy.SetGlobal(true);
+    settings->gpu_accuracy.SetValue(Settings::GpuAccuracy::Low);
+    settings->gpu_accuracy.SetGlobal(false);
+    settings->gpu_accuracy.SetValue(Settings::GpuAccuracy::High);
+    CHECK_FALSE(Settings::ApplyOcarinaOfTimeDefaults(*settings, Settings::OcarinaOfTimeProgramId));
+    CHECK(settings->gpu_accuracy.GetValue() == Settings::GpuAccuracy::High);
+    settings->gpu_accuracy.SetGlobal(true);
+    CHECK_FALSE(Settings::ApplyOcarinaOfTimeDefaults(*settings, Settings::MarioKartWorldProgramId));
+    CHECK(settings->gpu_accuracy.UsingGlobal());
+}
