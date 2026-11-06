@@ -1549,7 +1549,9 @@ void Vulkan::RasterizerVulkan::DisableGraphicsUniformBuffer(size_t stage, u32 in
 void RasterizerVulkan::FlushAll() {}
 
 void RasterizerVulkan::SubmitNx2ListCopies() {
-    if (buffer_cache.Nx2CopyListPages(scheduler.CurrentTick()) && !scheduler.DeferFlush()) {
+    // Submitted at once: ReadGpuWrittenCommands waits on these copies, so they can't sit out
+    // the longer DeferFlush interval (#161).
+    if (buffer_cache.Nx2CopyListPages(scheduler.CurrentTick())) {
         scheduler.Flush();
     }
 }
@@ -1571,6 +1573,12 @@ VideoCore::RasterizerInterface::GpuWrittenList RasterizerVulkan::ReadGpuWrittenC
 
 void RasterizerVulkan::NoteGpuWrittenCommandListSynced(DAddr page) {
     buffer_cache.Nx2NoteListSynced(page);
+}
+
+void RasterizerVulkan::FlushGpuWrittenCommandListPages(std::span<const DAddr> pages) {
+    gpu.InvalidateGPUCache();
+    std::scoped_lock lock{buffer_cache.mutex};
+    buffer_cache.Nx2FlushListPages(pages);
 }
 
 void RasterizerVulkan::FlushRegion(DAddr addr, u64 size, VideoCommon::CacheType which) {
@@ -1841,12 +1849,9 @@ void RasterizerVulkan::WaitForIdle() {
 }
 
 void RasterizerVulkan::FragmentBarrier() {
-    if (device.IsMoltenVK()) {
-        scheduler.DeferFragmentBarrier();
-        return;
-    }
-    // We already put barriers when a render pass finishes
-    scheduler.RequestOutsideRenderPassOperationContext();
+    // The next draw breaks the render pass only if it reads what this one wrote (#161): Ocarina
+    // ended ~5,900 render passes a second here.
+    scheduler.DeferFragmentBarrier();
 }
 
 void RasterizerVulkan::TiledCacheBarrier() {
@@ -2313,19 +2318,18 @@ void RasterizerVulkan::FlushWork() {
     const bool native = gpu_memory->UsesNativeTiling();
     u32 budget = SubmissionPolicy::DefaultNativeBudget;
     if (native && !android) {
-        static const u32 configured_budget = [] {
+        static const std::optional<u32> configured_budget = []() -> std::optional<u32> {
             if (const char* value = std::getenv("EDEN_NX2_FLUSH_DRAWS")) {
                 if (const auto parsed = SubmissionPolicy::ParseBudget(value)) {
-                    return *parsed;
+                    return parsed;
                 }
                 LOG_WARNING(Render_Vulkan,
-                            "Invalid EDEN_NX2_FLUSH_DRAWS; expected an integer from 1 to {}, "
-                            "using {}",
-                            (std::numeric_limits<u32>::max)(), SubmissionPolicy::DefaultNativeBudget);
+                            "Invalid EDEN_NX2_FLUSH_DRAWS; expected an integer from 1 to {}",
+                            (std::numeric_limits<u32>::max)());
             }
-            return SubmissionPolicy::DefaultNativeBudget;
+            return std::nullopt;
         }();
-        budget = configured_budget;
+        budget = configured_budget.value_or(SubmissionPolicy::DefaultNativeBudget);
     }
     u32 legacy_budget = 4096;
     if (!native && !android) {

@@ -23,6 +23,11 @@ PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 DEFAULT_SERVER = "127.0.0.1:6545"
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+BUTTONS = ["A", "B", "X", "Y", "L", "R", "ZL", "ZR", "Plus", "Minus", "Up", "Down", "Left", "Right",
+           "StickL", "StickR"]
+STICK = {"type": "array", "items": {"type": "number", "minimum": -1, "maximum": 1},
+         "minItems": 2, "maxItems": 2, "description": "[x, y], up is +y"}
+
 TOOLS = [
     {
         "name": "status",
@@ -103,21 +108,6 @@ TOOLS = [
         },
     },
     {
-        "name": "input",
-        "description": "Presses buttons (a, b, x, y, l, r, zl, zr, plus, minus, up, down, left, "
-                       "right, stick_l, stick_r) and holds sticks ([x, y], -1 to 1) on the game's "
-                       "first player for hold_ms, whatever the mapping is, then lets go.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "buttons": {"type": "array", "items": {"type": "string"}},
-                "stick_l": {"type": "array", "items": {"type": "number"}},
-                "stick_r": {"type": "array", "items": {"type": "number"}},
-                "hold_ms": {"type": "integer", "minimum": 16, "maximum": 30000},
-            },
-        },
-    },
-    {
         "name": "reject_shaders",
         "description": "EDEN_NX2_REJECT_HASH at runtime: rejects (or with reject=false restores) "
                        "native programs by native program key (shader dump names) or shader hash "
@@ -129,6 +119,22 @@ TOOLS = [
                 "hashes": {"type": "array", "items": {"type": "string"}},
                 "reject": {"type": "boolean"},
                 "timeout_s": {"type": "integer", "minimum": 0, "maximum": 60},
+            },
+        },
+    },
+    {
+        "name": "sample",
+        "description": "Sampling profiler: pauses the named host threads about 1000 times a second "
+                       "for the given seconds and returns where they were (self, self <- caller, "
+                       "inclusive counts per function). Also writes the report and its folded "
+                       "stacks to the dump directory. Windows only.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "threads": {"type": "string",
+                            "description": "Comma separated thread names; default GPU,GPUBack"},
+                "seconds": {"type": "number", "minimum": 1, "maximum": 60},
+                "max_chars": {"type": "integer", "minimum": 0},
             },
         },
     },
@@ -183,6 +189,47 @@ TOOLS = [
                 "timeout_s": {"type": "integer", "minimum": 1, "maximum": 60},
             },
             "required": ["gpu_address", "size"],
+        },
+    },
+    {
+        "name": "input",
+        "description": "Holds buttons and sticks on player 1 (or the handheld controller) for "
+                       "'frames' presented frames from the next present on, then releases; returns "
+                       "when done. Buttons are added to the owner's; a given stick replaces the "
+                       "owner's. Fails and releases when frames stop (paused or loading) for "
+                       "timeout_s (default frames / 20 + 10).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {**{
+                "buttons": {"type": "array", "items": {"type": "string", "enum": BUTTONS}},
+                "left_stick": STICK,
+                "right_stick": STICK,
+                "frames": {"type": "integer", "minimum": 1, "maximum": 36000},
+            },
+                           "timeout_s": {"type": "integer", "minimum": 1, "maximum": 900}},
+            "required": ["frames"],
+        },
+    },
+    {
+        "name": "input_sequence",
+        "description": "Runs input steps back to back, each for exactly its 'frames' presented "
+                       "frames, so a camera pan or walk replays identically for an A/B test. A "
+                       "step without buttons or sticks leaves the owner's input alone. At most "
+                       "1000 steps and 36000 frames.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "steps": {"type": "array", "minItems": 1, "maxItems": 1000,
+                          "items": {"type": "object", "properties": {
+                "buttons": {"type": "array", "items": {"type": "string", "enum": BUTTONS}},
+                "left_stick": STICK,
+                "right_stick": STICK,
+                "frames": {"type": "integer", "minimum": 1, "maximum": 36000},
+            },
+                                    "required": ["frames"]}},
+                "timeout_s": {"type": "integer", "minimum": 1, "maximum": 900},
+            },
+            "required": ["steps"],
         },
     },
 ]
@@ -246,6 +293,18 @@ class Emulator:
         return response.get("result")
 
 
+def default_timeout(name, params):
+    """The emulator's own timeout_s default, so the adapter waits at least as long."""
+    if name == "capture_frame":
+        return 120
+    if name == "sample":
+        return int(params.get("seconds", 10)) + 90
+    if name in ("input", "input_sequence"):
+        steps = params.get("steps", []) if name == "input_sequence" else [params]
+        return sum(int(step.get("frames", 0)) for step in steps) // 20 + 10
+    return 5
+
+
 def text(value):
     return {"type": "text", "text": value if isinstance(value, str) else json.dumps(value, indent=1)}
 
@@ -263,7 +322,7 @@ class Adapter:
             return self.capture_image(arguments)
         params = dict(arguments)
         index = params.pop("index", False)
-        timeout = max(int(params.get("timeout_s", 120 if name == "capture_frame" else 5)), 1) + 30
+        timeout = max(int(params.get("timeout_s", default_timeout(name, params))), 1) + 30
         result = self.emulator.call(name, params, timeout)
         if name == "screenshot":
             png = result.pop("png_base64", None)
