@@ -379,6 +379,20 @@ bool RasterizerVulkan::TryNx2IndirectReset(bool is_indexed, u32 instance_count) 
     return true;
 }
 
+
+namespace {
+// EDEN_NX2_SHADER_COUNT=<hash>: logs, per frame, how many draws used that shader (diagnostics).
+u64 ShaderCountHash() {
+    static const u64 hash = [] {
+        const char* value = std::getenv("EDEN_NX2_SHADER_COUNT");
+        return value ? std::strtoull(value, nullptr, 16) : 0ULL;
+    }();
+    return hash;
+}
+u32 g_shader_count_draws{};
+u32 g_shader_count_all{};
+} // Anonymous namespace
+
 template <typename Func>
 void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func, bool is_indirect) {
 
@@ -471,6 +485,19 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func, bool is_in
         return;
     }
 
+    if (ApplyPendingCpuWrites(false) && !pipeline->Configure(is_indexed)) {
+        report_failure("configure failed");
+        return;
+    }
+    if (const u64 counted = ShaderCountHash(); counted != 0) {
+        ++g_shader_count_all;
+        for (const u64 hash : pipeline->ShaderHashes()) {
+            if (hash == counted) {
+                ++g_shader_count_draws;
+                break;
+            }
+        }
+    }
     TracePendingCpuWrites(false, pipeline->ShaderHashes());
     TraceRenderState(is_indexed, "configured", texture_cache.GetFramebuffer());
     if (frame_dump.Capturing()) {
@@ -1175,7 +1202,11 @@ void RasterizerVulkan::Clear(u32 layer_count) {
         return;
     }
 
-    constexpr bool ENABLE_DEFERRED_CLEAR = true;
+    // EDEN_NX2_DEFER_CLEAR=0 records every clear where it is issued (diagnostics).
+    static const bool ENABLE_DEFERRED_CLEAR = [] {
+        const char* value = std::getenv("EDEN_NX2_DEFER_CLEAR");
+        return value == nullptr || value[0] != '0';
+    }();
     const bool color_full_channels = regs.clear_surface.R && regs.clear_surface.G &&
                                      regs.clear_surface.B && regs.clear_surface.A;
     const bool stencil_partial = use_stencil && framebuffer->HasAspectStencilBit() &&
@@ -1397,6 +1428,9 @@ void RasterizerVulkan::DispatchCompute() {
         }
         frame_dump.CaptureDispatch(pipeline->ShaderHash(), written);
     };
+    // The dispatch is recorded outside render passes and its descriptors already point at the
+    // buffers the writes are uploaded into: no second Configure.
+    ApplyPendingCpuWrites(true);
     TracePendingCpuWrites(true, std::array{pipeline->ShaderHash()});
     if (frame_dump.CapturingSampled()) {
         boost::container::small_vector<FrameDump::Sampled, 16> sampled;
@@ -1902,6 +1936,46 @@ void RasterizerVulkan::TraceRenderState(bool is_indexed, const char* outcome,
               static_cast<u32>(regs.render_enable_override));
 }
 
+bool RasterizerVulkan::ApplyPendingCpuWrites(bool compute) {
+    // Guest CPU writes into pages the GPU also wrote are only collected, and applied to the host
+    // buffers at the next fence or cache invalidation (the inline page write path keeps such
+    // pages GPU-owned, so every later CPU write to them is collected too). The hardware reads
+    // memory when the draw executes, after the CPU wrote it. Ocarina of Time's HUD vanished on
+    // every other frame. EDEN_NX2_APPLY_PENDING_WRITES=0 turns this off.
+    // =2 applies them before every draw and dispatch whenever any are collected.
+    static const char mode = [] {
+        const char* value = std::getenv("EDEN_NX2_APPLY_PENDING_WRITES");
+        return value == nullptr ? '1' : value[0];
+    }();
+    if (mode == '0' || !Tegra::g_nx2_ampere.load(std::memory_order_relaxed)) {
+        return false;
+    }
+    if (mode == '2') {
+        if (!gpu.HasPendingCPUWrites(0, u64{1} << 40)) {
+            return false;
+        }
+        gpu.InvalidateGPUCache();
+        return true;
+    }
+    bool hit = false;
+    {
+        std::scoped_lock lock{buffer_cache.mutex};
+        buffer_cache.ForEachBoundBuffer(compute, [&](u32, bool, u32, bool, const auto& binding,
+                                                     u32 bound_size, const auto*, u32) {
+            hit = hit || gpu.HasPendingCPUWrites(binding.device_addr, bound_size);
+        });
+        if (!hit && !compute) {
+            buffer_cache.ForEachBoundGeometryBuffer([&](DAddr addr, u64 size) {
+                hit = hit || gpu.HasPendingCPUWrites(addr, size);
+            });
+        }
+    }
+    if (hit) {
+        gpu.InvalidateGPUCache();
+    }
+    return hit;
+}
+
 void RasterizerVulkan::TracePendingCpuWrites(bool compute, std::span<const u64> shader_hashes) {
     // Guest CPU writes into GPU-written buffer memory are collected, and applied to the host
     // buffers only at the next fence or cache invalidation. A hit here reads the older bytes.
@@ -2003,6 +2077,12 @@ void RasterizerVulkan::TickFrame() {
         }
     }
     frame_dump.TickFrame();
+    if (ShaderCountHash() != 0) {
+        LOG_INFO(Render_Vulkan, "Shader count frame={} draws={} all={}", render_trace_frame,
+                 g_shader_count_draws, g_shader_count_all);
+        g_shader_count_draws = 0;
+        g_shader_count_all = 0;
+    }
     ++render_trace_frame;
     render_trace_draws = 0;
     render_trace_clears = 0;

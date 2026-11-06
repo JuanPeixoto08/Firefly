@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -59,6 +60,33 @@ namespace Vulkan {
 
 namespace {
 using Shader::Backend::SPIRV::EmitSPIRV;
+
+namespace {
+// EDEN_NX2_SPV_OVERRIDE=<dir>: when <dir>/<shader hash>.spv exists, build that SPIR-V instead of
+// the recompiled one (diagnostics: edit a shader's output and A/B it live; the file is read
+// again whenever the pipeline is rebuilt, e.g. after reject_shaders/restore).
+std::vector<u32> MaybeOverrideSpirv(u64 hash, std::vector<u32> code) {
+    static const char* const dir = std::getenv("EDEN_NX2_SPV_OVERRIDE");
+    if (dir == nullptr || dir[0] == '\0') {
+        return code;
+    }
+    const auto path = std::filesystem::path{dir} / fmt::format("{:016x}.spv", hash);
+    std::ifstream file{path, std::ios::binary | std::ios::ate};
+    if (!file) {
+        return code;
+    }
+    const auto size = static_cast<size_t>(file.tellg());
+    if (size == 0 || size % sizeof(u32) != 0) {
+        LOG_WARNING(Render_Vulkan, "SPIR-V override {} has a bad size {}", path.string(), size);
+        return code;
+    }
+    std::vector<u32> replacement(size / sizeof(u32));
+    file.seekg(0);
+    file.read(reinterpret_cast<char*>(replacement.data()), static_cast<std::streamsize>(size));
+    LOG_WARNING(Render_Vulkan, "Shader {:016x}: using SPIR-V override {}", hash, path.string());
+    return replacement;
+}
+} // Anonymous namespace
 using Shader::Maxwell::ConvertLegacyToGeneric;
 using Shader::Maxwell::GenerateGeometryPassthrough;
 using Shader::Maxwell::MergeDualVertexPrograms;
@@ -1222,7 +1250,7 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline(
 
         const auto runtime_info{MakeRuntimeInfo(programs, key, program, previous_stage, device)};
         ConvertLegacyToGeneric(program, runtime_info);
-        const std::vector<u32> code{EmitSPIRV(profile, runtime_info, program, binding)};
+        const std::vector<u32> code{MaybeOverrideSpirv(key.unique_hashes[index], EmitSPIRV(profile, runtime_info, program, binding))};
         device.SaveShader(code);
         modules[stage_index] = BuildShader(device, code);
 
@@ -1429,7 +1457,7 @@ ComputePipelineCacheEntry PipelineCache::CreateComputePipeline(
                     max_shared_memory / 1024);
         program.shared_memory_size = max_shared_memory;
     }
-    const std::vector<u32> code{EmitSPIRV(profile, program)};
+    const std::vector<u32> code{MaybeOverrideSpirv(key.unique_hash, EmitSPIRV(profile, program))};
     device.SaveShader(code);
     vk::ShaderModule spv_module{BuildShader(device, code)};
 

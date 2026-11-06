@@ -237,6 +237,9 @@ private:
     void FrameDumpPass(const Framebuffer* framebuffer);
     /// EDEN_NX2_PENDING_WRITE_TRACE: logs bound buffer ranges with collected, unapplied CPU writes.
     void TracePendingCpuWrites(bool compute, std::span<const u64> shader_hashes);
+    /// Switch 2: applies collected guest CPU writes when they overlap the buffers bound for this
+    /// draw or dispatch, as the hardware would read them. Returns true when it applied any.
+    bool ApplyPendingCpuWrites(bool compute);
     /// Records the uniform and storage buffers of the current draw or dispatch for the frame dump.
     bool FrameDumpBuffers(bool compute, std::span<const u64> shader_hashes);
 

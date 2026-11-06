@@ -369,6 +369,27 @@ public:
     /// Visits the uniform and storage buffers bound for the last draw or dispatch with the cached
     /// host buffer holding each range, if one does, for diagnostics. Nothing is
     /// created or synchronized. Stage 5 is compute.
+    /// Visits the index, vertex, indirect and texture buffer ranges bound for the last draw (as
+    /// device address and size). Diagnostics and pending-write checks only.
+    template <typename Func>
+    void ForEachBoundGeometryBuffer(Func&& func) {
+        const auto visit = [&](const Binding& binding) {
+            if (binding.device_addr != 0 && binding.size != 0) {
+                func(binding.device_addr, binding.size);
+            }
+        };
+        visit(channel_state->index_buffer);
+        visit(channel_state->indirect_buffer_binding);
+        visit(channel_state->count_buffer_binding);
+        ForEachEnabledBit(enabled_vertex_buffers_mask,
+                          [&](u32 index) { visit(channel_state->vertex_buffers[index]); });
+        for (u32 stage = 0; stage < NUM_STAGES; ++stage) {
+            ForEachEnabledBit(channel_state->enabled_texture_buffers[stage], [&](u32 index) {
+                visit(channel_state->texture_buffers[stage][index]);
+            });
+        }
+    }
+
     template <typename Func>
     void ForEachBoundBuffer(bool compute, Func&& func) {
         const auto visit = [&](u32 stage, bool storage, u32 index, bool written,

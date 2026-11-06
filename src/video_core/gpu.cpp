@@ -279,6 +279,37 @@ struct GPU::Impl {
 
     void RequestComposite(std::vector<Tegra::FramebufferConfig>&& layers, std::vector<Service::Nvidia::NvFence>&& fences) {
         const size_t num_fences{fences.size()};
+        // Switch 2 presents report every buffer free at once, so a game runs ahead and draws its
+        // next frames into the images it presented. A composite queued as a sync operation runs
+        // when the GPU thread next looks at its requests, often after it processed later frames:
+        // Ocarina of Time's frame then showed its next scene without the HUD drawn over it, on
+        // every other frame. Composite at the fence instead, in command stream order, when it
+        // hasn't passed yet. EDEN_NX2_FENCE_COMPOSITE=0 turns this off.
+        static const bool fence_composite = [] {
+            const char* value = std::getenv("EDEN_NX2_FENCE_COMPOSITE");
+            return value == nullptr || value[0] != '0';
+        }();
+        if (fence_composite && num_fences == 1 && Tegra::g_nx2_ampere.load(std::memory_order_relaxed)) {
+            auto& syncpoint_manager = system.Host1x().GetSyncpointManager();
+            auto shared_layers = std::make_shared<std::vector<Tegra::FramebufferConfig>>(layers);
+            auto registering = std::make_shared<std::atomic<bool>>(true);
+            auto ran_inline = std::make_shared<std::atomic<bool>>(false);
+            syncpoint_manager.RegisterGuestAction(
+                fences[0].id, fences[0].value, [this, shared_layers, registering, ran_inline] {
+                    if (registering->load(std::memory_order_acquire)) {
+                        // Already passed: we are on the presenting thread, not the GPU thread.
+                        ran_inline->store(true, std::memory_order_release);
+                        return;
+                    }
+                    renderer->Composite(*shared_layers);
+                });
+            registering->store(false, std::memory_order_release);
+            if (!ran_inline->load(std::memory_order_acquire)) {
+                pending_composite_fence = 0;
+                gpu_thread.TickGPU(is_async);
+                return;
+            }
+        }
         size_t current_request_counter{};
         if (num_fences != 0) {
             std::unique_lock<std::mutex> lk(request_swap_mutex);

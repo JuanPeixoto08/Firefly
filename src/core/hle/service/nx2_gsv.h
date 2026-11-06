@@ -1791,7 +1791,22 @@ private:
         m_previous_fence_id = ~w[22];
         m_previous_fence_value = w[24];
         const auto waited = std::chrono::steady_clock::now();
-        Composite(w[5], ~w[22], w[24], w[7]);
+        // EDEN_NX2_PRESENT_DELAY=1: show the previous presented image instead of this one (its
+        // GPU work is surely recorded by now). Diagnostics for frames shown before they finished.
+        static const bool present_delay = [] {
+            const char* value = std::getenv("EDEN_NX2_PRESENT_DELAY");
+            return value != nullptr && value[0] == '1';
+        }();
+        if (present_delay) {
+            const std::array<u32, 4> current{w[5], ~w[22], w[24], w[7]};
+            if (m_delayed_present) {
+                const auto& d = *m_delayed_present;
+                Composite(d[0], d[1], d[2], d[3]);
+            }
+            m_delayed_present = current;
+        } else {
+            Composite(w[5], ~w[22], w[24], w[7]);
+        }
         const auto composited = std::chrono::steady_clock::now();
         PaceToVblank(w[12], ctx.GetThread().GetOwnerProcess());
         const auto paced = std::chrono::steady_clock::now();
@@ -1881,6 +1896,7 @@ private:
         std::chrono::steady_clock::time_point last_present{};
     } m_stats{};
     u32 m_previous_fence_id{~0U}; // none yet (WaitForFrame ignores ids >= 192)
+    std::optional<std::array<u32, 4>> m_delayed_present;
     u32 m_previous_fence_value{};
 
     // The console flips one frame per 60 Hz vblank and keeps the rest queued, so a game can't
