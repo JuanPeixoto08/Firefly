@@ -79,8 +79,11 @@ public:
         current_limit = limit;
         // Grow to the next power of two and never shrink, so tables that change limits often
         // don't reallocate, without reserving 524,289 entries (16 MiB of 32-byte descriptors)
-        // for every small table (Eglantine PR 277).
-        const size_t num_descriptors = std::bit_ceil(size_t{limit} + 1);
+        // for every small table (Eglantine PR 277). The old 512 Ki rounding, in 32 bits, stays the
+        // cap: it wraps to a few entries for the near-4 Gi limits of garbage descriptor headers.
+        const u32 rounded = ((limit + 0x80000U) & ~0x7ffffU) + 1;
+        const size_t num_descriptors =
+            (std::min)(std::bit_ceil(size_t{limit} + 1), size_t{rounded});
         if (descriptors.size() < num_descriptors) {
             read_descriptors.resize(Common::DivCeil(num_descriptors, 64U));
             descriptors.resize(num_descriptors);

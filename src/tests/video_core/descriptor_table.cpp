@@ -317,8 +317,10 @@ TEST_CASE("Descriptor Debug poisoning touches only the current addressable range
     std::ranges::fill(table.LiveBoundIds(), poison);
     REQUIRE(table.bound_ids.capacity() == 0);
 
+    // Grown for a larger limit first, so slots past the live range exist.
+    REQUIRE(table.Synchronize(0x1000, 255));
     REQUIRE(table.Synchronize(0x1000, 127));
-    REQUIRE(table.bound_ids.size() == 524289);
+    REQUIRE(table.bound_ids.size() == 256);
     REQUIRE(table.LiveBoundIds().size() == 128);
     std::ranges::fill(table.bound_ids, untouched);
     REQUIRE(table.Read(memory, 127).second);
