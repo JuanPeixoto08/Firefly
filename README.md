@@ -31,15 +31,20 @@ Firefly isn't affiliated with, endorsed by or sponsored by any console maker or 
 
 Firefly starts from Lichii's `nx2` branch, kept up to date, and adds:
 
+- **Far fewer white flashes.** Vegetation, or the whole scene, used to flash white for a frame, mostly when frames ran slow. Native compute programs give their storage buffers no size, so each dispatch marked up to 8 MiB as written by the GPU, and the CPU's later writes to those pages waited for the next fence. Firefly marks only as far as each shader's stores can reach, worked out from the shader itself (daniel-lynch's store-extent analysis). With the emulator held to three CPU cores, a 40-second test went from 85-93 flashes to none.
+- **GPU accuracy Low by default for the tested game.** That setting lets the GPU work run on two threads; at High the game runs at about 25-30 FPS instead of 60. The game starts at Low unless you choose an accuracy in its own settings.
+- **Low-end mode** (Graphics > Advanced, per game, off by default). The game's upscaling network is emulated in software, which costs weak GPUs most of the frame; low-end mode draws a plain upscale in its place and lets the game lower its own resolution.
+- **Less busy waiting on small CPUs.** Idle emulated cores poll for work only when the host has a CPU to spare for each of them.
 - **A faster check for continuous GPU memory.** On every bind, native storage buffers ask how far a GPU address stays continuous in device memory. Lichii keeps 64 recent answers per thread. The tested game binds more distinct ranges than that, which caused about 29,000 cache misses a second. Each miss walked up to 8 MiB of page tables, and together they took 6% of the GPU back thread. A range can only break at a page boundary, so Firefly keeps one answer per page, which covers every address and size inside it. A cross-check against the full walk over 11.5 million calls found no difference.
 - **Input through the debug server.** The opt-in debug server can press buttons and move the sticks, so a test can reach a scene and measure it without anyone at the controls.
+- **Fixes from other forks:** from Eglantine, the Vulkan scheduler kept to one thread while the second GPU thread submits, upload scans skipped for buffers the game hasn't written, and smaller texture descriptor tables; from open Lichii pull requests, the upscaler stand-in (#143) and GPU time scaling (#114).
 - **Its own name, icon and update channel.** It uses the same data folder as Lichii, so settings, saves and shader caches carry over.
 
 Fixes that also help Lichii are sent back there as pull requests. Several of the fixes the tested game needed already reached Lichii that way; see [Credits](#credits).
 
 ## Performance
 
-Measured at the same spot in the tested game's first area, docked, at 1x resolution, with GPU accuracy set to Low for that game:
+Measured at the same spot in the tested game's first area, at 1x resolution, with GPU accuracy set to Low for that game:
 
 | Build | Frame time | Frame rate |
 |---|---|---|
@@ -51,13 +56,14 @@ Test machine: Windows 11, AMD Ryzen 5 9600X, NVIDIA GeForce RTX 5070 Ti, 32 GB R
 
 ## Recommended settings
 
-- **GPU accuracy: Low** for the game. Right-click the game, choose **Configure Game**, then **Graphics > Advanced**. This lets the GPU work run on two threads, which is most of the speed-up above.
+- **GPU accuracy: Low.** Firefly picks it for the game by itself. To choose another, right-click the game, choose **Configure Game**, then **Graphics > Advanced**.
+- **Low-end mode** on weaker PCs, in the same place. The image is softer, but the game runs much lighter on the GPU.
 - Keep **Use persistent pipeline cache** on. New areas still stutter the first time their shaders compile.
 
 ## Status
 
 - **Platforms:** tested only on Windows with an NVIDIA GPU. Other builds may compile, but nobody has tested them.
-- **Known problems:** short hitches the first time an area loads, while its shaders compile. Expect some visual bugs: it is still an experimental emulator.
+- **Known problems:** short hitches the first time an area loads, while its shaders compile; an occasional white flash; frame rate dips in the busiest areas. Expect some visual bugs: it is still an experimental emulator.
 
 ## Downloads
 
@@ -90,6 +96,8 @@ Firefly is a small layer on years of other people's work.
   - **nyakuoff**: the first cache of continuous GPU ranges, which Firefly's per-page cache builds on.
   - **Zarigis**: buffer cache uploads and downloads of GPU-written pages.
   - **Shrxmy**, **Felipe Lima**, **Inc0rporate**, **Kompas9**, **resadent** and **cr1ckt**: shader, Vulkan, video, boot and build fixes.
+- **daniel-lynch**: the store-extent analysis behind the white flash fix, from his Lichii fork.
+- **rdenno**, **Mvii7** and **nowhere02** (Eglantine): the scheduler, buffer scan and descriptor table changes.
 - **Kradnah**: Firefly itself. Kradnah chooses what to fix, tests every build in the game and decides what goes in, including the compute shader lowering the tested game needed (also merged into Lichii). The debugging, profiling and code were done together with Claude, Anthropic's AI assistant.
 
 If your work is in Firefly and missing here, open an issue and it will be added.
