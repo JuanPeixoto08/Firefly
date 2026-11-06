@@ -715,6 +715,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir dist
+          # With one platform, download-artifact extracts its only artifact straight into
+          # artifacts/, and each Qt plugin folder was released as a zip of its own (build 6).
+          if [ -e artifacts/firefly.exe ]; then
+            single="artifacts/firefly-windows-x86_64-${GITHUB_SHA}"
+            mkdir "$single"
+            find artifacts -mindepth 1 -maxdepth 1 ! -path "$single" -exec mv {} "$single"/ \;
+          fi
           # Asset names drop the commit sha: the release tag already identifies the build, and
           # stable names let the notes table link to them.
           strip_sha() { sed "s/-${GITHUB_SHA}//" <<< "$1"; }
