@@ -8,6 +8,7 @@
 #include <array>
 #include <bit>
 #include <climits>
+#include <cstdlib>
 
 #include <boost/container/static_vector.hpp>
 
@@ -397,6 +398,30 @@ Id CasLoop(EmitContext& ctx, Operation operation, Id array_pointer, Id element_p
     const Id op_b{ctx.OpFunctionParameter(value_type)};
     const Id base{is_shared ? ctx.shared_memory_u32 : ctx.OpFunctionParameter(array_pointer)};
     ctx.AddLabel();
+    // Bound the retries. On AMD's Windows driver a compare-exchange on an address outside the
+    // bound range can return a value that never matches the one loaded, so an unbounded loop
+    // spins until the driver times out and the device is lost (Ocarina of Time, Orchid #38,
+    // Lichii #165). Giving up after the limit can drop that one atomic update instead.
+    // EDEN_NX2_CAS_LOOP_LIMIT=<n> changes the limit; 0 restores the unbounded loop.
+    static const u32 cas_loop_limit = [] {
+        const char* value = std::getenv("EDEN_NX2_CAS_LOOP_LIMIT");
+        return value ? static_cast<u32>(std::strtoul(value, nullptr, 10)) : 16384U;
+    }();
+    Id attempts{};
+    if (cas_loop_limit != 0) {
+        attempts = ctx.AddLocalVariable(ctx.TypePointer(spv::StorageClass::Function, ctx.U32[1]),
+                                        spv::StorageClass::Function);
+        ctx.OpStore(attempts, zero);
+    }
+    const auto loop_done = [&](Id success) {
+        if (cas_loop_limit == 0) {
+            return success;
+        }
+        const Id count{ctx.OpIAdd(ctx.U32[1], ctx.OpLoad(ctx.U32[1], attempts), ctx.Const(1U))};
+        ctx.OpStore(attempts, count);
+        const Id exhausted{ctx.OpUGreaterThanEqual(ctx.U1, count, ctx.Const(cas_loop_limit))};
+        return ctx.OpLogicalOr(ctx.U1, success, exhausted);
+    };
     ctx.OpBranch(loop_header);
     ctx.AddLabel(loop_header);
 
@@ -414,7 +439,7 @@ Id CasLoop(EmitContext& ctx, Operation operation, Id array_pointer, Id element_p
         const Id atomic_res{ctx.OpAtomicCompareExchange(ctx.U32[1], word_pointer, scope_id, zero,
                                                         zero, u32_new_value, u32_value)};
         const Id success{ctx.OpIEqual(ctx.U1, atomic_res, u32_value)};
-        ctx.OpBranchConditional(success, merge_block, loop_header);
+        ctx.OpBranchConditional(loop_done(success), merge_block, loop_header);
 
         ctx.AddLabel(merge_block);
         ctx.OpReturnValue(ctx.OpUnpackHalf2x16(ctx.F32[2], atomic_res));
@@ -427,7 +452,7 @@ Id CasLoop(EmitContext& ctx, Operation operation, Id array_pointer, Id element_p
         const Id atomic_res{ctx.OpAtomicCompareExchange(ctx.U32[1], word_pointer, scope_id, zero,
                                                         zero, new_value, value)};
         const Id success{ctx.OpIEqual(ctx.U1, atomic_res, value)};
-        ctx.OpBranchConditional(success, merge_block, loop_header);
+        ctx.OpBranchConditional(loop_done(success), merge_block, loop_header);
 
         ctx.AddLabel(merge_block);
         ctx.OpReturnValue(ctx.OpBitcast(value_type, atomic_res));
