@@ -86,9 +86,11 @@ IR::U64 Address(IR::IREmitter& ir, u32 offset, const IR::Value& bytes) {
         IR::U32{ir.IAdd(Word(ir, offset), IR::U32{bytes})}, Word(ir, offset + 4)));
 }
 
-std::optional<u64> At(const StorageWriteExtent& extent, std::array<u32, 3> block,
+// Signed, so the checks below compare with plain literals (MSVC rejects signed/unsigned compares).
+std::optional<s64> At(const StorageWriteExtent& extent, std::array<u32, 3> block,
                       std::optional<std::array<u32, 3>> grid) {
-    return Shader::ResolveStorageWriteExtent(extent, block, grid);
+    const auto reach = Shader::ResolveStorageWriteExtent(extent, block, grid);
+    return reach ? std::optional<s64>{static_cast<s64>(*reach)} : std::nullopt;
 }
 } // Anonymous namespace
 

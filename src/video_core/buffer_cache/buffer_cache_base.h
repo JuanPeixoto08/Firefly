@@ -154,6 +154,8 @@ public:
     std::array<u32, NUM_STAGES> written_storage_buffers{};
     u32 enabled_compute_storage_buffers = 0;
     u32 written_compute_storage_buffers = 0;
+    // Bytes from each compute storage binding's start a dispatch marks GPU-written.
+    std::array<u32, NUM_STORAGE_BUFFERS> compute_storage_write_marks{};
 
     u32 total_graphics_storage_buffers = 0;
     u32 total_compute_storage_buffers = 0;
@@ -298,8 +300,10 @@ public:
 
     void UnbindComputeStorageBuffers();
 
+    /// write_extent: how far the program's stores reach past the pointer (native programs).
     void BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index, u32 cbuf_offset,
-                                  bool is_written, u32 indirect_offset = ~0U);
+                                  bool is_written, u32 indirect_offset = ~0U,
+                                  const Shader::StorageWriteExtent& write_extent = {});
 
     void UnbindComputeTextureBuffers();
 
