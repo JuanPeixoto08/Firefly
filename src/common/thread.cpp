@@ -5,6 +5,8 @@
 // SPDX-FileCopyrightText: 2014 Citra Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <bit>
 #include <chrono>
 #include <string>
 #include <thread>
@@ -627,6 +629,30 @@ void PollThreadPolicies() {
     }
     RefreshThreadPolicies();
 #endif
+}
+
+u32 UsableCpuCount() {
+    static const u32 count = [] {
+        u32 cpus = 0;
+#if defined(_WIN32)
+        DWORD_PTR process_mask{};
+        DWORD_PTR system_mask{};
+        if (GetProcessAffinityMask(GetCurrentProcess(), &process_mask, &system_mask)) {
+            cpus = static_cast<u32>(std::popcount(static_cast<u64>(process_mask)));
+        }
+#elif defined(__linux__)
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+            cpus = static_cast<u32>(CPU_COUNT(&set));
+        }
+#endif
+        if (cpus == 0) {
+            cpus = std::thread::hardware_concurrency();
+        }
+        return (std::max)(cpus, 1U);
+    }();
+    return count;
 }
 
 #ifdef ARCHITECTURE_x86_64

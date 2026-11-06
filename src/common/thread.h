@@ -115,4 +115,7 @@ void SetCurrentThreadToAllCores();
 void RefreshThreadPolicies();
 void PollThreadPolicies();
 
+/// The number of logical CPUs this process may run on (its affinity at the first call), at least 1.
+u32 UsableCpuCount();
+
 } // namespace Common
