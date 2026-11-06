@@ -254,8 +254,7 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, low_end_mode, tr("Low-end mode"),
            tr("Runs faster on weak hardware, with a softer image: a game's upscaling network is "
               "replaced by a plain upscale, and built-in full-resolution patches stay off so the "
-              "game can lower its own resolution.
-Takes effect when a game starts."));
+              "game can lower its own resolution.\nTakes effect when a game starts."));
     INSERT(Settings, use_asynchronous_shaders, tr("Enable asynchronous shader compilation"),
            tr("May reduce shader stutter."));
     INSERT(Settings, gpu_clock, tr("GPU Clocks"),
