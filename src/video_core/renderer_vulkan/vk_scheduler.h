@@ -131,13 +131,13 @@ public:
         render_pass_has_stores = true;
     }
 
-    /// A compute dispatch was recorded: the next render pass waits for its writes.
-    void NoteComputeDispatch() {
-        compute_writes_pending = true;
-    }
-
     bool RenderPassHasStores() const {
         return render_pass_has_stores;
+    }
+
+    /// A dispatch was recorded: the next render pass must see what it wrote.
+    void NoteComputeWrites() {
+        compute_writes_pending = true;
     }
 
     /// Returns true when a render pass is currently active in the scheduler state.
@@ -448,7 +448,6 @@ private:
     std::unique_ptr<MasterSemaphore> master_semaphore;
     FragmentBarrierState fragment_barrier;
     bool render_pass_has_stores{};
-    /// Compute work recorded since the last render pass began (NoteComputeDispatch).
     bool compute_writes_pending{};
     bool graphics_pipeline_missing{};
     std::unique_ptr<CommandPool> command_pool;
